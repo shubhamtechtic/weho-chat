@@ -1,0 +1,24 @@
+export async function GET(request: Request) {
+  try {
+    const authHeader = request.headers.get("Authorization")
+
+    const response = await fetch(`${process.env.BACKEND_URL}/admin/profile`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader || "",
+      },
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return Response.json(data, { status: response.status })
+    }
+
+    return Response.json(data)
+  } catch (error) {
+    console.error("Admin profile error:", error)
+    return Response.json({ detail: "Internal server error" }, { status: 500 })
+  }
+}

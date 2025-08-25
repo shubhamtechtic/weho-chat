@@ -1,14 +1,13 @@
 export async function POST(req: Request) {
-  const { messages, id } = await req.json();
+  const { messages, id, user_id, guest } = await req.json()
 
   // Get the latest user message
-  const lastUserMessage = [...messages].reverse().find((msg: any) => msg.role === "user");
-  const query = lastUserMessage?.content;
+  const lastUserMessage = [...messages].reverse().find((msg: any) => msg.role === "user")
+  const query = lastUserMessage?.content
 
   if (!query) {
-    return new Response("Empty query", { status: 400 });
+    return new Response("Empty query", { status: 400 })
   }
-  console.log("Query:", query); 
 
   const response = await fetch("https://api.weho.websitetestingbox.com/api/v1/chatbot-v2/chat", {
     method: "POST",
@@ -20,12 +19,14 @@ export async function POST(req: Request) {
       query,
       thread_id: "default",
       language: "English",
-      // session_id: id,
+      session_id: id,
+      is_guest: guest !== undefined ? guest : true,
+      user_id: user_id || "guest",
     }),
-  });
+  })
 
   if (!response.ok || !response.body) {
-    return new Response("Failed to fetch stream", { status: 500 });
+    return new Response("Failed to fetch stream", { status: 500 })
   }
 
   // Stream the response directly back to the frontend
@@ -36,5 +37,5 @@ export async function POST(req: Request) {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     },
-  });
+  })
 }
