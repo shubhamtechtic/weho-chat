@@ -2,29 +2,20 @@
 "use client"
 
 import type React from "react"
-
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarHeader,
-  SidebarTrigger,
-  SidebarContent,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarFooter,
-  SidebarInset,
-} from "@/components/ui/sidebar"
-import { type DragEvent, useEffect, useRef, useState } from "react"
+import { SidebarProvider, Sidebar, SidebarInset } from "@/components/ui/sidebar"
+import { type DragEvent, useEffect, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { toast } from "sonner"
-import { PlusCircle, SendIcon, Trash2, Paperclip, Bot, User, Upload, LogIn, LogOut } from "lucide-react"
+import { SendIcon, Paperclip, Bot, User, Upload, LogIn, LogOut } from "lucide-react"
 import { nanoid } from "nanoid"
 import { apiClient } from "@/lib/api-client"
+import { ChatHistorySidebar } from "@/components/chat-history-sidebar"
+import { useUserAuth } from "@/contexts/user-auth-context"
 
 function AttachmentIcon() {
   return <Paperclip className="h-4 w-4" />
@@ -58,154 +49,19 @@ interface Message {
   id: string
   role: "user" | "assistant"
   content: string
-  created_at?: string
-  data?: {
-    attachments?: Array<{
-      name: string
-      contentType: string
-      url: string
-    }>
-  }
+  attachments?: Array<{
+    name: string
+    url: string
+    type: string
+  }>
 }
 
-type Chat = {
+interface Chat {
   id: string
   title: string
   messages: Message[]
-  last_active?: string
-  preview?: string
-}
-
-const getTextFromDataUrl = (dataUrl: string) => {
-  const base64 = dataUrl.split(",")[1]
-  try {
-    return window.atob(base64)
-  } catch (e) {
-    console.error("Failed to decode base64 string", e)
-    return ""
-  }
-}
-
-function TextFilePreview({ file }: { file: File }) {
-  const [content, setContent] = useState<string>("")
-
-  useEffect(() => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const text = e.target?.result
-      setContent(typeof text === "string" ? text.slice(0, 100) : "")
-    }
-    reader.readAsText(file)
-  }, [file])
-
-  return (
-    <div>
-      {content}
-      {content.length >= 100 && "..."}
-    </div>
-  )
-}
-
-function ChatHistory({
-  chats,
-  activeChatId,
-  setActiveChat,
-  deleteChat,
-  newChat,
-  renameChat,
-}: {
-  chats: Chat[]
-  activeChatId: string | null
-  setActiveChat: (id: string) => void
-  deleteChat: (id: string) => void
-  newChat: () => void
-  renameChat: (id: string, title: string) => void
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState("")
-
-  const handleRename = (chat: Chat) => {
-    setEditingId(chat.id)
-    setEditTitle(chat.title)
-  }
-
-  const saveRename = async (chatId: string) => {
-    if (editTitle.trim()) {
-      await renameChat(chatId, editTitle.trim())
-    }
-    setEditingId(null)
-    setEditTitle("")
-  }
-
-  const nonEmptyChats = chats.filter((chat) => chat.messages.length > 0)
-  return (
-    <div className="flex flex-col h-full">
-      <SidebarHeader>
-        <h2 className="text-lg font-semibold">History</h2>
-      </SidebarHeader>
-      <SidebarContent className="flex-1 overflow-y-auto">
-        <SidebarMenu>
-          {nonEmptyChats.length > 0 ? (
-            nonEmptyChats.map((chat) => (
-              <SidebarMenuItem key={chat.id} className="relative">
-                {editingId === chat.id ? (
-                  <div className="flex items-center gap-1 p-2">
-                    <input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onBlur={() => saveRename(chat.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") saveRename(chat.id)
-                        if (e.key === "Escape") setEditingId(null)
-                      }}
-                      className="flex-1 bg-transparent border-b border-border text-sm"
-                      autoFocus
-                    />
-                  </div>
-                ) : (
-                  <SidebarMenuButton
-                    onClick={() => setActiveChat(chat.id)}
-                    onDoubleClick={() => handleRename(chat)}
-                    isActive={activeChatId === chat.id}
-                    className="w-full text-left justify-start pr-8"
-                  >
-                    <span className="truncate">{chat.title}</span>
-                  </SidebarMenuButton>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    deleteChat(chat.id)
-                  }}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </SidebarMenuItem>
-            ))
-          ) : (
-            <p className="p-4 text-sm text-muted-foreground">No chat history yet.</p>
-          )}
-        </SidebarMenu>
-      </SidebarContent>
-      <SidebarFooter>
-        <Button variant="outline" className="w-full justify-center bg-transparent" onClick={newChat}>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          New Chat
-        </Button>
-      </SidebarFooter>
-    </div>
-  )
-}
-
-interface AuthUser {
-  id: string
-  email: string
-  name: string
-  access_token: string
-  refresh_token: string
+  createdAt: Date
+  updatedAt: Date
 }
 
 export default function Home() {
@@ -214,8 +70,6 @@ export default function Home() {
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [isGuest, setIsGuest] = useState(true)
   const [showAuthDialog, setShowAuthDialog] = useState(false)
   const [authMode, setAuthMode] = useState<"login" | "register">("login")
   const [authForm, setAuthForm] = useState({
@@ -226,22 +80,10 @@ export default function Home() {
   })
   const [authLoading, setAuthLoading] = useState(false)
 
+  const { user, isGuest, login, logout, setGuestMode } = useUserAuth()
+
   const currentChat = chats.find((chat) => chat.id === activeChatId)
   const messages = currentChat?.messages || []
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem("user")
-    if (savedUser) {
-      try {
-        const userData = JSON.parse(savedUser)
-        setUser(userData)
-        setIsGuest(false)
-      } catch (error) {
-        console.error("Failed to parse saved user data:", error)
-        localStorage.removeItem("user")
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (!isGuest && user) {
@@ -273,58 +115,51 @@ export default function Home() {
     }
   }
 
-  const saveGuestChats = (chats: Chat[]) => {
-    if (isGuest) {
-      localStorage.setItem("guest_chats", JSON.stringify(chats))
-    }
-  }
-
   const loadChatHistory = async () => {
-    if (!user?.id) return
+    if (!user || isGuest) return
 
     try {
-      console.log("[v0] Loading chat history for user:", user.id)
       const sessions = await apiClient.getUserSessions(user.id)
-      console.log("[v0] Fetched sessions:", sessions)
 
-      const chatsFromBackend: Chat[] = await Promise.all(
-        sessions.map(async (session: any) => {
+      if (sessions.length === 0) {
+        createNewChat()
+        return
+      }
+
+      const chatsWithMessages = await Promise.all(
+        sessions.map(async (session) => {
           try {
             const messages = await apiClient.getSessionMessages(session.session_id, user.id)
             return {
               id: session.session_id,
               title: session.title || session.preview || "New Chat",
               messages: messages.map((msg: any) => ({
-                id: nanoid(),
+                id: msg.id || nanoid(),
                 role: msg.role,
                 content: msg.content,
-                created_at: msg.created_at,
+                attachments: msg.attachments || [],
               })),
-              last_active: session.last_active,
-              preview: session.preview,
+              createdAt: new Date(session.created_at),
+              updatedAt: new Date(session.last_active),
             }
           } catch (error) {
-            console.error(`[v0] Failed to load messages for session ${session.session_id}:`, error)
-            return {
-              id: session.session_id,
-              title: session.title || session.preview || "New Chat",
-              messages: [],
-              last_active: session.last_active,
-              preview: session.preview,
-            }
+            console.error(`Failed to load messages for session ${session.session_id}:`, error)
+            return null
           }
         }),
       )
 
-      console.log("[v0] Processed chats:", chatsFromBackend)
-      setChats(chatsFromBackend)
-      if (chatsFromBackend.length > 0) {
-        setActiveChatId(chatsFromBackend[0].id)
+      const validChats = chatsWithMessages.filter((chat): chat is Chat => chat !== null)
+      setChats(validChats)
+
+      if (validChats.length > 0) {
+        setActiveChatId(validChats[0].id)
       } else {
         createNewChat()
       }
     } catch (error) {
-      console.error("[v0] Failed to load chat history:", error)
+      console.error("Failed to load chat history:", error)
+      toast.error("Failed to load chat history")
       createNewChat()
     }
   }
@@ -335,10 +170,14 @@ export default function Home() {
       id: newChatId,
       title: "New Chat",
       messages: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
     }
     setChats((prevChats) => {
       const newChats = [newChat, ...prevChats]
-      saveGuestChats(newChats)
+      if (isGuest) {
+        localStorage.setItem("guest_chats", JSON.stringify(newChats))
+      }
       return newChats
     })
     setActiveChatId(newChatId)
@@ -346,15 +185,15 @@ export default function Home() {
 
   const deleteChat = async (chatId: string) => {
     try {
-      if (!isGuest && user?.id) {
-        // For logged-in users, delete from backend
+      if (!isGuest && user) {
         await apiClient.deleteSession(chatId, user.id)
       }
 
-      // Update local state for both guest and logged-in users
       setChats((prev) => {
         const newChats = prev.filter((chat) => chat.id !== chatId)
-        saveGuestChats(newChats)
+        if (isGuest) {
+          localStorage.setItem("guest_chats", JSON.stringify(newChats))
+        }
 
         if (activeChatId === chatId) {
           if (newChats.length > 0) {
@@ -374,15 +213,15 @@ export default function Home() {
 
   const renameChat = async (chatId: string, title: string) => {
     try {
-      if (!isGuest && user?.id) {
-        // For logged-in users, rename in backend
+      if (!isGuest && user) {
         await apiClient.renameSession(chatId, user.id, title)
       }
 
-      // Update local state for both guest and logged-in users
       setChats((prev) => {
         const newChats = prev.map((chat) => (chat.id === chatId ? { ...chat, title } : chat))
-        saveGuestChats(newChats)
+        if (isGuest) {
+          localStorage.setItem("guest_chats", JSON.stringify(newChats))
+        }
         return newChats
       })
       toast.success("Chat renamed successfully")
@@ -396,7 +235,9 @@ export default function Home() {
     const title = firstMessage.length > 30 ? firstMessage.substring(0, 30) + "..." : firstMessage
     setChats((prev) => {
       const newChats = prev.map((chat) => (chat.id === chatId ? { ...chat, title } : chat))
-      saveGuestChats(newChats)
+      if (isGuest) {
+        localStorage.setItem("guest_chats", JSON.stringify(newChats))
+      }
       return newChats
     })
   }
@@ -528,22 +369,22 @@ export default function Home() {
       id: nanoid(),
       role: "user",
       content: input.trim(),
-      data: {
-        attachments: files
-          ? Array.from(files).map((file) => ({
-              name: file.name,
-              contentType: file.type,
-              url: URL.createObjectURL(file),
-            }))
-          : undefined,
-      },
+      attachments: files
+        ? Array.from(files).map((file) => ({
+            name: file.name,
+            url: URL.createObjectURL(file),
+            type: file.type,
+          }))
+        : undefined,
     }
 
     setChats((prev) => {
       const newChats = prev.map((chat) =>
         chat.id === activeChatId ? { ...chat, messages: [...chat.messages, userMessage] } : chat,
       )
-      saveGuestChats(newChats)
+      if (isGuest) {
+        localStorage.setItem("guest_chats", JSON.stringify(newChats))
+      }
       return newChats
     })
 
@@ -565,6 +406,7 @@ export default function Home() {
           messages: [...messages, userMessage].map((msg) => ({
             role: msg.role,
             content: msg.content,
+            attachments: msg.attachments,
           })),
           id: activeChatId,
           user_id: user?.id,
@@ -591,7 +433,9 @@ export default function Home() {
         const newChats = prev.map((chat) =>
           chat.id === activeChatId ? { ...chat, messages: [...chat.messages, assistantMessage] } : chat,
         )
-        saveGuestChats(newChats)
+        if (isGuest) {
+          localStorage.setItem("guest_chats", JSON.stringify(newChats))
+        }
         return newChats
       })
 
@@ -616,7 +460,9 @@ export default function Home() {
                   }
                 : chat,
             )
-            saveGuestChats(newChats)
+            if (isGuest) {
+              localStorage.setItem("guest_chats", JSON.stringify(newChats))
+            }
             return newChats
           })
         }
@@ -640,7 +486,9 @@ export default function Home() {
               }
             : chat,
         )
-        saveGuestChats(newChats)
+        if (isGuest) {
+          localStorage.setItem("guest_chats", JSON.stringify(newChats))
+        }
         return newChats
       })
     } finally {
@@ -648,37 +496,33 @@ export default function Home() {
     }
   }
 
+  const handleSessionSelect = (sessionId: string) => {
+    setActiveChatId(sessionId)
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setAuthLoading(true)
 
     try {
-      const response = await fetch("/api/user/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: authForm.email,
-          password: authForm.password,
-        }),
+      const response = await apiClient.loginUser({
+        email: authForm.email,
+        password: authForm.password,
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        setUser(data)
-        setIsGuest(false)
-        localStorage.setItem("user", JSON.stringify(data))
-        setShowAuthDialog(false)
-        setAuthForm({ name: "", email: "", password: "", confirmPassword: "" })
-        toast.success("Logged in successfully!")
-      } else {
-        toast.error(data.error || "Login failed")
+      const userData = {
+        ...response.user,
+        access_token: response.access_token,
+        refresh_token: response.refresh_token,
       }
+
+      login(userData)
+      setShowAuthDialog(false)
+      setAuthForm({ name: "", email: "", password: "", confirmPassword: "" })
+      toast.success("Login successful!")
     } catch (error) {
       console.error("Login error:", error)
-      toast.error("Login failed")
+      toast.error(error instanceof Error ? error.message : "Login failed")
     } finally {
       setAuthLoading(false)
     }
@@ -688,67 +532,46 @@ export default function Home() {
     e.preventDefault()
 
     if (authForm.password !== authForm.confirmPassword) {
-      toast.error("Passwords don't match")
+      toast.error("Passwords do not match")
       return
     }
 
     setAuthLoading(true)
 
     try {
-      const response = await fetch("/api/user/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: authForm.name,
-          email: authForm.email,
-          password: authForm.password,
-        }),
+      await apiClient.registerUser({
+        name: authForm.name,
+        email: authForm.email,
+        password: authForm.password,
+        confirm_password: authForm.confirmPassword,
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        toast.success("Registration successful! Please login.")
-        setAuthMode("login")
-        setAuthForm({ name: "", email: "", password: "", confirmPassword: "" })
-      } else {
-        toast.error(data.error || "Registration failed")
-      }
+      toast.success("Registration successful! Please login.")
+      setAuthMode("login")
+      setAuthForm({ name: "", email: "", password: "", confirmPassword: "" })
     } catch (error) {
       console.error("Registration error:", error)
-      toast.error("Registration failed")
+      toast.error(error instanceof Error ? error.message : "Registration failed")
     } finally {
       setAuthLoading(false)
     }
   }
 
-  const handleLogout = () => {
-    setUser(null)
-    setIsGuest(true)
-    localStorage.removeItem("user")
-    setChats([])
-    createNewChat()
-    toast.success("Logged out successfully!")
-  }
-
-  const continueAsGuest = () => {
-    setIsGuest(true)
-    setShowAuthDialog(false)
-    createNewChat()
-  }
-
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
-        <ChatHistory
-          chats={chats}
-          activeChatId={activeChatId}
-          setActiveChat={setActiveChatId}
-          deleteChat={deleteChat}
-          newChat={createNewChat}
-          renameChat={renameChat}
+        <ChatHistorySidebar
+          currentSessionId={activeChatId}
+          onSessionSelect={handleSessionSelect}
+          onNewChat={createNewChat}
+          onShowLogin={() => {
+            setAuthMode("login")
+            setShowAuthDialog(true)
+          }}
+          onShowRegister={() => {
+            setAuthMode("register")
+            setShowAuthDialog(true)
+          }}
         />
       </Sidebar>
       <SidebarInset>
@@ -759,7 +582,6 @@ export default function Home() {
           onDrop={handleDrop}
         >
           <header className="flex items-center p-4 border-b">
-            <SidebarTrigger className="md:hidden" />
             <h1 className="text-xl font-bold ml-4">Weho AI Chat</h1>
             <div className="ml-auto flex items-center gap-2">
               {isUploading && (
@@ -768,10 +590,10 @@ export default function Home() {
                   Uploading...
                 </div>
               )}
-              {user ? (
+              {user && !isGuest ? (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">Welcome, {user.name}</span>
-                  <Button variant="outline" size="sm" onClick={handleLogout}>
+                  <Button variant="outline" size="sm" onClick={logout}>
                     <LogOut className="h-4 w-4 mr-1" />
                     Logout
                   </Button>
@@ -852,7 +674,14 @@ export default function Home() {
                   >
                     {authMode === "login" ? "Need an account? Register" : "Have an account? Login"}
                   </Button>
-                  <Button variant="ghost" onClick={continueAsGuest} className="w-full">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setGuestMode(true)
+                      setShowAuthDialog(false)
+                    }}
+                    className="w-full"
+                  >
                     Continue as Guest
                   </Button>
                 </div>
@@ -890,15 +719,15 @@ export default function Home() {
                         <Markdown>{message.content}</Markdown>
                       </div>
                       <div className="flex flex-row gap-2 flex-wrap">
-                        {message.data?.attachments?.map((attachment) =>
-                          attachment.contentType?.startsWith("image") ? (
+                        {message.attachments?.map((attachment) =>
+                          attachment.type?.startsWith("image") ? (
                             <img
                               className="rounded-md w-40 mb-3"
                               key={attachment.name}
                               src={attachment.url || "/placeholder.svg"}
                               alt={attachment.name}
                             />
-                          ) : attachment.contentType?.startsWith("text") ? (
+                          ) : attachment.type?.startsWith("text") ? (
                             <div
                               key={attachment.name}
                               className="text-xs w-40 h-24 overflow-hidden text-muted-foreground border p-2 rounded-md bg-secondary mb-3"
@@ -971,7 +800,7 @@ export default function Home() {
                             transition: { duration: 0.2 },
                           }}
                         >
-                          <TextFilePreview file={file} />
+                          {getTextFromDataUrl(URL.createObjectURL(file))}
                         </motion.div>
                       ),
                     )}
@@ -1018,4 +847,14 @@ export default function Home() {
       </SidebarInset>
     </SidebarProvider>
   )
+}
+
+const getTextFromDataUrl = (dataUrl: string) => {
+  const base64 = dataUrl.split(",")[1]
+  try {
+    return window.atob(base64)
+  } catch (e) {
+    console.error("Failed to decode base64 string", e)
+    return ""
+  }
 }

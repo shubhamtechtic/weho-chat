@@ -8,12 +8,9 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import {
   Eye,
   EyeOff,
-  LogOut,
   User,
   Lock,
   Mail,
@@ -25,12 +22,12 @@ import {
   Edit,
   Play,
   Plus,
-  Download,
-  Activity,
-  Database,
-  X,
-  Info,
+  Settings,
+  TrendingUp,
+  Clock,
 } from "lucide-react"
+
+import { apiClient } from "@/lib/api-client"
 
 interface AdminUser {
   id: string
@@ -87,9 +84,9 @@ export default function AdminPanel() {
   })
   const [showResetPassword, setShowResetPassword] = useState(false)
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
-  const [activeTab, setActiveTab] = useState<"profile" | "change-password" | "analytics" | "documents" | "prompts">(
-    "profile",
-  )
+  const [activeTab, setActiveTab] = useState<
+    "profile" | "change-password" | "analytics" | "documents" | "prompts" | "upload"
+  >("profile")
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [documents, setDocuments] = useState<UploadedDoc[]>([])
   const [prompts, setPrompts] = useState<Prompt[]>([])
@@ -368,139 +365,89 @@ export default function AdminPanel() {
     }
   }
 
+  const fetchPrompts = async () => {
+    try {
+      const data = await apiClient.listPrompts()
+      setPrompts(data)
+    } catch (error) {
+      console.error("Failed to fetch prompts:", error)
+      toast.error("Failed to fetch prompts")
+    }
+  }
+
   const fetchMetrics = async () => {
     try {
-      const token = localStorage.getItem("admin_access_token")
-      const response = await fetch("/api/admin/metrics", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setMetrics(data)
-      }
+      const data = await apiClient.getMetrics()
+      setMetrics(data)
     } catch (error) {
       console.error("Failed to fetch metrics:", error)
+      toast.error("Failed to fetch metrics")
     }
   }
 
   const fetchDocuments = async () => {
     try {
-      const token = localStorage.getItem("admin_access_token")
-      const response = await fetch("/api/admin/docs", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setDocuments(data)
-      }
+      const data = await apiClient.getDocs()
+      setDocuments(data)
     } catch (error) {
       console.error("Failed to fetch documents:", error)
-    }
-  }
-
-  const fetchPrompts = async () => {
-    try {
-      const token = localStorage.getItem("admin_access_token")
-      const response = await fetch("/api/admin/prompts", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setPrompts(data)
-      }
-    } catch (error) {
-      console.error("Failed to fetch prompts:", error)
+      toast.error("Failed to fetch documents")
     }
   }
 
   const handleCreatePrompt = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-
     try {
-      const token = localStorage.getItem("admin_access_token")
-      const response = await fetch("/api/admin/prompts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      let variables = {}
+      if (promptForm.variables.trim()) {
+        variables = JSON.parse(promptForm.variables)
+      }
+
+      if (selectedPrompt) {
+        await apiClient.updatePrompt(selectedPrompt.id, {
+          template: promptForm.template,
+          variables,
+        })
+        toast.success("Prompt updated successfully")
+      } else {
+        await apiClient.createPrompt({
           name: promptForm.name,
           template: promptForm.template,
-          variables: JSON.parse(promptForm.variables || "{}"),
-        }),
-      })
-
-      if (response.ok) {
-        toast.success("Prompt created successfully!")
-        setPromptForm({ name: "", template: "", variables: "{}" })
-        setIsCreatingPrompt(false)
-        fetchPrompts()
-      } else {
-        const error = await response.json()
-        toast.error(error.error || "Failed to create prompt")
+          variables,
+        })
+        toast.success("Prompt created successfully")
       }
+
+      setIsCreatingPrompt(false)
+      setSelectedPrompt(null)
+      setPromptForm({ name: "", template: "", variables: "{}" })
+      fetchPrompts()
     } catch (error) {
-      console.error("Create prompt error:", error)
-      toast.error("Failed to create prompt")
-    } finally {
-      setIsLoading(false)
+      console.error("Failed to save prompt:", error)
+      toast.error("Failed to save prompt")
     }
   }
 
   const handleDeletePrompt = async (promptId: string) => {
-    if (!confirm("Are you sure you want to delete this prompt?")) return
-
-    try {
-      const token = localStorage.getItem("admin_access_token")
-      const response = await fetch(`/api/admin/prompts/${promptId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        toast.success("Prompt deleted successfully!")
+    if (confirm("Are you sure you want to delete this prompt?")) {
+      try {
+        await apiClient.deletePrompt(promptId)
+        toast.success("Prompt deleted successfully")
         fetchPrompts()
-      } else {
+      } catch (error) {
+        console.error("Failed to delete prompt:", error)
         toast.error("Failed to delete prompt")
       }
-    } catch (error) {
-      console.error("Delete prompt error:", error)
-      toast.error("Failed to delete prompt")
     }
   }
 
   const handleSetActivePrompt = async (promptId: string) => {
     try {
-      const token = localStorage.getItem("admin_access_token")
-      const response = await fetch(`/api/admin/prompts/set-active/${promptId}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        toast.success("Prompt set as active successfully!")
-        fetchPrompts()
-      } else {
-        const error = await response.json()
-        toast.error(error.error || "Failed to set active prompt")
-      }
+      await apiClient.setActivePrompt(promptId)
+      toast.success("Prompt set as active")
+      fetchPrompts()
     } catch (error) {
-      console.error("Set active prompt error:", error)
+      console.error("Failed to set active prompt:", error)
       toast.error("Failed to set active prompt")
     }
   }
@@ -604,11 +551,20 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (isLoggedIn) {
+      // Load all data immediately on login
+      fetchMetrics()
+      fetchDocuments()
+      fetchPrompts()
+    }
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (isLoggedIn) {
       if (activeTab === "analytics") fetchMetrics()
       if (activeTab === "documents") fetchDocuments()
       if (activeTab === "prompts") fetchPrompts()
     }
-  }, [isLoggedIn, activeTab])
+  }, [activeTab])
 
   if (!isLoggedIn) {
     return (
@@ -772,310 +728,136 @@ export default function AdminPanel() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Welcome, {adminUser?.first_name || adminUser?.email}</span>
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
+              <Settings className="w-6 h-6 text-white" />
             </div>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Admin Dashboard</h1>
+              <p className="text-sm text-gray-500">Document Management System</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-700">{adminUser?.email || "admin@example.com"}</span>
+            </div>
+            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">Super Admin</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Sidebar */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardContent className="p-4">
-                <nav className="space-y-2">
-                  <Button
-                    variant={activeTab === "profile" ? "default" : "ghost"}
-                    className="w-full justify-start"
-                    onClick={() => setActiveTab("profile")}
-                  >
-                    <User className="h-4 w-4 mr-2" />
-                    Profile
-                  </Button>
-                  <Button
-                    variant={activeTab === "change-password" ? "default" : "ghost"}
-                    className="w-full justify-start"
-                    onClick={() => setActiveTab("change-password")}
-                  >
-                    <Lock className="h-4 w-4 mr-2" />
-                    Change Password
-                  </Button>
-                  <Button
-                    variant={activeTab === "analytics" ? "default" : "ghost"}
-                    className="w-full justify-start"
-                    onClick={() => setActiveTab("analytics")}
-                  >
-                    <BarChart3 className="h-4 w-4 mr-2" />
-                    Analytics
-                  </Button>
-                  <Button
-                    variant={activeTab === "documents" ? "default" : "ghost"}
-                    className="w-full justify-start"
-                    onClick={() => setActiveTab("documents")}
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Documents
-                  </Button>
-                  <Button
-                    variant={activeTab === "prompts" ? "default" : "ghost"}
-                    className="w-full justify-start"
-                    onClick={() => setActiveTab("prompts")}
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Prompts
-                  </Button>
-                </nav>
-              </CardContent>
-            </Card>
+      <div className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Total Uploads</h3>
+              <Upload className="w-4 h-4 text-gray-400" />
+            </div>
+            <div className="text-2xl font-bold text-gray-900">{metrics?.upload_count || 0}</div>
+            <p className="text-xs text-gray-500 mt-1">Documents uploaded</p>
           </div>
 
-          {/* Main Content */}
-          <div className="lg:col-span-3">
-            {activeTab === "profile" && adminUser && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Profile Information</CardTitle>
-                  <CardDescription>Your admin account details</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Email</Label>
-                      <Input value={adminUser.email} disabled />
-                    </div>
-                    <div>
-                      <Label>First Name</Label>
-                      <Input value={adminUser.first_name || "N/A"} disabled />
-                    </div>
-                    <div>
-                      <Label>Last Name</Label>
-                      <Input value={adminUser.last_name || "N/A"} disabled />
-                    </div>
-                    <div>
-                      <Label>Account Type</Label>
-                      <Input value={adminUser.is_superuser ? "Super Admin" : "Admin"} disabled />
-                    </div>
-                    <div>
-                      <Label>Status</Label>
-                      <Input value={adminUser.is_active ? "Active" : "Inactive"} disabled />
-                    </div>
-                    <div>
-                      <Label>Last Login</Label>
-                      <Input
-                        value={adminUser.last_login ? new Date(adminUser.last_login).toLocaleString() : "Never"}
-                        disabled
-                      />
-                    </div>
+          <div className="bg-white p-6 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Total Queries</h3>
+              <MessageSquare className="w-4 h-4 text-gray-400" />
+            </div>
+            <div className="text-2xl font-bold text-gray-900">{metrics?.query_count || 0}</div>
+            <p className="text-xs text-gray-500 mt-1">Chat interactions</p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Success Rate</h3>
+              <TrendingUp className="w-4 h-4 text-gray-400" />
+            </div>
+            <div className="text-2xl font-bold text-gray-900">
+              {metrics ? Math.round((metrics.query_success / metrics.query_count) * 100) : 0}%
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Successful queries</p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Avg Response</h3>
+              <Clock className="w-4 h-4 text-gray-400" />
+            </div>
+            <div className="text-2xl font-bold text-gray-900">
+              {metrics?.avg_response_latency ? `${metrics.avg_response_latency.toFixed(2)}s` : "0s"}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Response latency</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="border-b border-gray-200">
+            <nav className="flex space-x-8 px-6">
+              {[
+                { id: "upload", label: "Upload Documents", icon: Upload },
+                { id: "documents", label: "Manage Documents", icon: FileText },
+                { id: "prompts", label: "Prompt Management", icon: MessageSquare },
+                { id: "analytics", label: "Analytics", icon: BarChart3 },
+                { id: "profile", label: "Profile", icon: User },
+                { id: "change-password", label: "Change Password", icon: Lock },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === tab.id
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="p-6">
+            {activeTab === "upload" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">Upload Documents</h2>
+                  <p className="text-sm text-gray-500">
+                    Upload PDF, TXT, or DOCX files to enhance the chatbot's knowledge base
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <Label htmlFor="threadId" className="text-sm font-medium text-gray-700">
+                      Thread ID
+                    </Label>
+                    <Input
+                      id="threadId"
+                      value={uploadForm.threadId}
+                      onChange={(e) => setUploadForm({ ...uploadForm, threadId: e.target.value })}
+                      placeholder="default"
+                      className="mt-1 max-w-md"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Documents with the same thread ID will be grouped together
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            )}
 
-            {activeTab === "change-password" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Change Password</CardTitle>
-                  <CardDescription>Update your account password</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleChangePassword} className="space-y-4">
-                    <div>
-                      <Label htmlFor="old_password">Current Password</Label>
-                      <Input
-                        id="old_password"
-                        type="password"
-                        value={loginForm.password}
-                        onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="new_password">New Password</Label>
-                      <Input
-                        id="new_password"
-                        type="password"
-                        value={resetPasswordForm.new_password}
-                        onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, new_password: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="confirm_password">Confirm New Password</Label>
-                      <Input
-                        id="confirm_password"
-                        type="password"
-                        value={resetPasswordForm.confirm_password}
-                        onChange={(e) =>
-                          setResetPasswordForm({ ...resetPasswordForm, confirm_password: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <Button type="submit" disabled={isLoading}>
-                      {isLoading ? "Changing Password..." : "Change Password"}
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors"
+                    onDrop={handleFileDropEvent}
+                    onDragOver={handleDragOverEvent}
+                    onDragLeave={handleDragLeaveEvent}
+                  >
+                    <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Drag and drop your file here</h3>
+                    <p className="text-gray-500 mb-4">or</p>
+                    <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="mb-4">
+                      Choose File
                     </Button>
-                  </form>
-                </CardContent>
-              </Card>
-            )}
-
-            {activeTab === "analytics" && (
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>System Analytics</CardTitle>
-                    <CardDescription>Overview of chatbot performance and usage</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {metrics ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <div className="flex items-center">
-                            <Upload className="h-8 w-8 text-blue-600" />
-                            <div className="ml-4">
-                              <p className="text-sm font-medium text-gray-600">Documents</p>
-                              <p className="text-2xl font-bold text-gray-900">{metrics.upload_count}</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <div className="flex items-center">
-                            <MessageSquare className="h-8 w-8 text-green-600" />
-                            <div className="ml-4">
-                              <p className="text-sm font-medium text-gray-600">Total Queries</p>
-                              <p className="text-2xl font-bold text-gray-900">{metrics.query_count}</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-purple-50 p-4 rounded-lg">
-                          <div className="flex items-center">
-                            <Activity className="h-8 w-8 text-purple-600" />
-                            <div className="ml-4">
-                              <p className="text-sm font-medium text-gray-600">Success Rate</p>
-                              <p className="text-2xl font-bold text-gray-900">
-                                {metrics.query_count > 0
-                                  ? Math.round((metrics.query_success / metrics.query_count) * 100)
-                                  : 0}
-                                %
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-orange-50 p-4 rounded-lg">
-                          <div className="flex items-center">
-                            <Database className="h-8 w-8 text-orange-600" />
-                            <div className="ml-4">
-                              <p className="text-sm font-medium text-gray-600">Avg Response</p>
-                              <p className="text-2xl font-bold text-gray-900">
-                                {metrics.avg_response_latency.toFixed(3)}s
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <p>Loading metrics...</p>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {metrics && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Detailed Metrics</CardTitle>
-                      <CardDescription>Comprehensive analytics for your chatbot system</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span className="font-medium text-gray-700">Upload Count:</span>
-                            <span className="font-bold text-gray-900">{metrics.upload_count}</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span className="font-medium text-gray-700">Query Count:</span>
-                            <span className="font-bold text-gray-900">{metrics.query_count}</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span className="font-medium text-gray-700">Successful Queries:</span>
-                            <span className="font-bold text-gray-900">{metrics.query_success}</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2">
-                            <span className="font-medium text-gray-700">Failed Queries:</span>
-                            <span className="font-bold text-gray-900">{metrics.query_errors}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span className="font-medium text-gray-700">Avg Retrieve Latency:</span>
-                            <span className="font-bold text-gray-900">{metrics.avg_retrieve_latency.toFixed(3)}s</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span className="font-medium text-gray-700">Avg Response Latency:</span>
-                            <span className="font-bold text-gray-900">{metrics.avg_response_latency.toFixed(3)}s</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2">
-                            <span className="font-medium text-gray-700">Last Updated:</span>
-                            <span className="font-bold text-gray-900">
-                              {new Date(metrics.last_updated).toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            )}
-
-            {activeTab === "documents" && (
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Upload Documents</CardTitle>
-                    <CardDescription>
-                      Upload PDF, TXT, or DOCX files to enhance the chatbot's knowledge base
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <Label htmlFor="thread_id">Thread ID</Label>
-                      <Input
-                        id="thread_id"
-                        value={uploadForm.threadId}
-                        onChange={(e) => setUploadForm({ ...uploadForm, threadId: e.target.value })}
-                        placeholder="default"
-                        className="max-w-md"
-                      />
-                      <p className="text-sm text-gray-500 mt-1">
-                        Documents with the same thread ID will be grouped together
-                      </p>
-                    </div>
-
-                    <div
-                      className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors cursor-pointer"
-                      onDrop={handleFileDrop}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Drag and drop your file here</h3>
-                      <p className="text-gray-500 mb-4">or</p>
-                      <Button variant="outline">Choose File</Button>
-                      <p className="text-sm text-gray-500 mt-4">Supports PDF, TXT, DOCX files up to 50MB</p>
-                    </div>
-
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1083,188 +865,291 @@ export default function AdminPanel() {
                       onChange={handleFileSelect}
                       className="hidden"
                     />
-
+                    <p className="text-xs text-gray-500">Supports PDF, TXT, DOCX files up to 50MB</p>
                     {uploadForm.file && (
-                      <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="h-8 w-8 text-blue-600" />
-                          <div>
-                            <p className="font-medium">{uploadForm.file.name}</p>
-                            <p className="text-sm text-gray-600">
-                              {(uploadForm.file.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                        </div>
-                        <Button onClick={() => setUploadForm({ ...uploadForm, file: null })} variant="ghost" size="sm">
-                          <X className="h-4 w-4" />
-                        </Button>
+                      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                        <p className="text-sm text-blue-800">Selected: {uploadForm.file.name}</p>
                       </div>
                     )}
+                  </div>
 
-                    <Button
-                      onClick={handleDocumentUpload}
-                      disabled={!uploadForm.file || isLoading}
-                      className="w-full bg-blue-500 hover:bg-blue-600"
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      {isLoading ? "Uploading..." : "Upload Document"}
+                  <Button
+                    onClick={handleDocumentUploadEvent}
+                    disabled={!uploadForm.file || isLoading}
+                    className="bg-cyan-500 hover:bg-cyan-600"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {isLoading ? "Uploading..." : "Upload Document"}
+                  </Button>
+                </div>
+
+                <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-500" />
+                      Supported Formats
+                    </h3>
+                    <ul className="text-sm text-gray-600 space-y-1">
+                      <li>• PDF documents</li>
+                      <li>• Plain text files (.txt)</li>
+                      <li>• Word documents (.docx)</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">Best Practices</h3>
+                    <ul className="text-sm text-gray-600 space-y-1">
+                      <li>• Keep files under 50MB</li>
+                      <li>• Use descriptive filenames</li>
+                      <li>• Group related docs in same thread</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "documents" && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">Manage Documents</h2>
+                    <p className="text-sm text-gray-500">View and manage uploaded documents</p>
+                  </div>
+                  <Button onClick={fetchDocuments} variant="outline">
+                    Refresh
+                  </Button>
+                </div>
+
+                {documents.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No documents uploaded yet</h3>
+                    <p className="text-gray-500 mb-4">Upload your first document to get started</p>
+                    <Button onClick={() => setActiveTab("upload")} variant="outline">
+                      Upload Document
                     </Button>
-
-                    <div className="grid md:grid-cols-2 gap-6 pt-6 border-t">
-                      <div>
-                        <div className="flex items-center space-x-2 mb-3">
-                          <Info className="h-5 w-5 text-blue-600" />
-                          <h4 className="font-medium">Upload Guidelines</h4>
-                        </div>
-                        <div>
-                          <h5 className="font-medium text-sm mb-2">Supported Formats</h5>
-                          <ul className="text-sm text-gray-600 space-y-1">
-                            <li>• PDF documents</li>
-                            <li>• Plain text files (.txt)</li>
-                            <li>• Word documents (.docx)</li>
-                          </ul>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {documents.map((doc) => (
+                      <div key={doc.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-blue-500" />
+                            <div>
+                              <h3 className="font-medium text-gray-900">{doc.filename}</h3>
+                              <p className="text-sm text-gray-500">
+                                Thread: {doc.thread_id} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB •{" "}
+                                {doc.file_type}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                Uploaded by {doc.uploaded_by} on {new Date(doc.uploaded_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-900">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
-                      <div>
-                        <h5 className="font-medium text-sm mb-2">Best Practices</h5>
-                        <ul className="text-sm text-gray-600 space-y-1">
-                          <li>• Keep files under 50MB</li>
-                          <li>• Use descriptive filenames</li>
-                          <li>• Group related docs in same thread</li>
-                        </ul>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "analytics" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">Analytics</h2>
+                  <p className="text-sm text-gray-500">Comprehensive analytics for your chatbot system</p>
+                </div>
+
+                {metrics ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      <div className="bg-white p-4 rounded-lg border">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Upload Count:</h3>
+                        <p className="text-2xl font-bold text-gray-900">{metrics.upload_count}</p>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Query Count:</h3>
+                        <p className="text-2xl font-bold text-gray-900">{metrics.query_count}</p>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Successful Queries:</h3>
+                        <p className="text-2xl font-bold text-gray-900">{metrics.query_success}</p>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Failed Queries:</h3>
+                        <p className="text-2xl font-bold text-gray-900">{metrics.query_errors}</p>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Avg Retrieve Latency:</h3>
+                        <p className="text-2xl font-bold text-gray-900">{metrics.avg_retrieve_latency.toFixed(3)}s</p>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Avg Response Latency:</h3>
+                        <p className="text-2xl font-bold text-gray-900">{metrics.avg_response_latency.toFixed(3)}s</p>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Document Management</CardTitle>
-                    <CardDescription>Manage uploaded documents and files</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {documents.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div className="flex-1">
-                            <h3 className="font-medium">{doc.filename}</h3>
-                            <p className="text-sm text-gray-600">
-                              Uploaded by {doc.uploaded_by} • {new Date(doc.uploaded_at).toLocaleDateString()} •
-                              {(doc.file_size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                            <Badge variant="secondary" className="mt-1">
-                              {doc.file_type}
-                            </Badge>
-                          </div>
-                          <div className="flex space-x-2">
-                            <Button variant="outline" size="sm">
-                              <Download className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="sm" className="text-red-600 bg-transparent">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      {documents.length === 0 && (
-                        <p className="text-center text-gray-500 py-8">No documents uploaded yet</p>
-                      )}
+                    <div className="bg-white p-4 rounded-lg border">
+                      <h3 className="text-sm font-medium text-gray-500 mb-2">Last Updated:</h3>
+                      <p className="text-lg text-gray-900">{new Date(metrics.last_updated).toLocaleString()}</p>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <BarChart3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No analytics data available</h3>
+                    <p className="text-gray-500">Analytics data will appear here once you start using the chatbot</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "profile" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">Profile</h2>
+                  <p className="text-sm text-gray-500">View your admin profile information</p>
+                </div>
+
+                {adminUser && (
+                  <div className="bg-white p-6 rounded-lg border space-y-4">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Email</Label>
+                      <p className="text-gray-900">{adminUser.email}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Name</Label>
+                      <p className="text-gray-900">
+                        {adminUser.first_name} {adminUser.last_name}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Role</Label>
+                      <p className="text-gray-900">{adminUser.is_superuser ? "Super Admin" : "Admin"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Status</Label>
+                      <p className="text-gray-900">{adminUser.is_active ? "Active" : "Inactive"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Last Login</Label>
+                      <p className="text-gray-900">
+                        {adminUser.last_login ? new Date(adminUser.last_login).toLocaleString() : "Never"}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Created At</Label>
+                      <p className="text-gray-900">{new Date(adminUser.created_at).toLocaleString()}</p>
+                    </div>
+                    <div className="pt-4">
+                      <Button
+                        onClick={handleLogout}
+                        variant="outline"
+                        className="text-red-600 hover:text-red-700 bg-transparent"
+                      >
+                        Logout
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "change-password" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">Change Password</h2>
+                  <p className="text-sm text-gray-500">Update your admin password</p>
+                </div>
+
+                <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
+                  <div>
+                    <Label htmlFor="old_password">Current Password</Label>
+                    <Input
+                      id="old_password"
+                      type="password"
+                      value={loginForm.password}
+                      onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="new_password">New Password</Label>
+                    <Input
+                      id="new_password"
+                      type="password"
+                      value={resetPasswordForm.new_password}
+                      onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, new_password: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="confirm_new_password">Confirm New Password</Label>
+                    <Input
+                      id="confirm_new_password"
+                      type="password"
+                      value={resetPasswordForm.confirm_password}
+                      onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, confirm_password: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" disabled={isLoading}>
+                    {isLoading ? "Changing..." : "Change Password"}
+                  </Button>
+                </form>
               </div>
             )}
 
             {activeTab === "prompts" && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h2 className="text-2xl font-bold">Prompt Management</h2>
-                    <p className="text-gray-600">Manage and test your AI prompts</p>
+                    <h2 className="text-lg font-semibold text-gray-900">Prompt Management</h2>
+                    <p className="text-sm text-gray-500">Manage and test your AI prompts</p>
                   </div>
                   <Button onClick={() => setIsCreatingPrompt(true)} className="bg-blue-600 hover:bg-blue-700">
-                    <Plus className="h-4 w-4 mr-2" />
+                    <Plus className="w-4 h-4 mr-2" />
                     Create Prompt
                   </Button>
                 </div>
 
-                {isCreatingPrompt && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>{selectedPrompt ? "Edit Prompt" : "Create New Prompt"}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <form onSubmit={handleCreatePrompt} className="space-y-4">
-                        <div>
-                          <Label htmlFor="prompt_name">Name</Label>
-                          <Input
-                            id="prompt_name"
-                            value={promptForm.name}
-                            onChange={(e) => setPromptForm({ ...promptForm, name: e.target.value })}
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="prompt_template">Template</Label>
-                          <Textarea
-                            id="prompt_template"
-                            rows={8}
-                            value={promptForm.template}
-                            onChange={(e) => setPromptForm({ ...promptForm, template: e.target.value })}
-                            placeholder="You are WEHO AI, a helpful assistant. Provide accurate answers in {language} based on the context below.
-
-Context:
-{context}"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="prompt_variables">Variables (JSON)</Label>
-                          <Textarea
-                            id="prompt_variables"
-                            rows={3}
-                            value={promptForm.variables}
-                            onChange={(e) => setPromptForm({ ...promptForm, variables: e.target.value })}
-                            placeholder='{"language": "English", "context": "", "messages": []}'
-                          />
-                        </div>
-                        <div className="flex space-x-2">
-                          <Button type="submit" disabled={isLoading}>
-                            {isLoading ? "Saving..." : selectedPrompt ? "Update Prompt" : "Create Prompt"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setIsCreatingPrompt(false)
-                              setSelectedPrompt(null)
-                              setPromptForm({ name: "", template: "", variables: "{}" })
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </form>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <div className="space-y-4">
-                  {prompts.map((prompt) => (
-                    <Card key={prompt.id} className={`${prompt.is_active ? "border-blue-500 border-2" : "border"}`}>
-                      <CardContent className="p-6">
+                {prompts.length === 0 ? (
+                  <div className="text-center py-12">
+                    <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No prompts created yet</h3>
+                    <p className="text-gray-500 mb-4">Create your first prompt to get started</p>
+                    <Button onClick={() => setIsCreatingPrompt(true)} variant="outline">
+                      Create Your First Prompt
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {prompts.map((prompt) => (
+                      <div key={prompt.id} className="border border-blue-200 rounded-lg p-6 bg-blue-50/30">
                         <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center space-x-3">
-                            <h3 className="text-lg font-semibold">{prompt.name}</h3>
-                            {prompt.is_active && <Badge className="bg-blue-600 text-white">Active</Badge>}
+                          <div className="flex items-center gap-3">
+                            <h3 className="font-medium text-gray-900">{prompt.name}</h3>
+                            {prompt.is_active && (
+                              <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">
+                                Active
+                              </span>
+                            )}
                           </div>
-                          <div className="flex space-x-2">
-                            <Button variant="outline" size="sm" onClick={() => handleTestPrompt(prompt)} title="Test">
-                              <Play className="h-4 w-4 mr-1" />
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleTestPrompt(prompt)}
+                              className="text-gray-600 hover:text-gray-900"
+                            >
+                              <Play className="w-4 h-4 mr-1" />
                               Test
                             </Button>
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
                               onClick={() => {
                                 setSelectedPrompt(prompt)
@@ -1275,78 +1160,68 @@ Context:
                                 })
                                 setIsCreatingPrompt(true)
                               }}
-                              title="Edit"
+                              className="text-gray-600 hover:text-gray-900"
                             >
-                              <Edit className="h-4 w-4 mr-1" />
+                              <Edit className="w-4 h-4 mr-1" />
                               Edit
                             </Button>
                             {!prompt.is_active && (
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => handleSetActivePrompt(prompt.id)}
-                                title="Set Active"
-                                className="text-green-600 border-green-600 hover:bg-green-50"
+                                className="text-gray-600 hover:text-gray-900"
                               >
-                                <Activity className="h-4 w-4 mr-1" />
+                                <Clock className="w-4 h-4 mr-1" />
                                 Set Active
                               </Button>
                             )}
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              className="text-red-600 border-red-600 hover:bg-red-50 bg-transparent"
                               onClick={() => handleDeletePrompt(prompt.id)}
-                              title="Delete"
+                              className="text-red-600 hover:text-red-900"
                             >
-                              <Trash2 className="h-4 w-4 mr-1" />
+                              <Trash2 className="w-4 h-4 mr-1" />
                               Delete
                             </Button>
                           </div>
                         </div>
 
-                        <p className="text-sm text-gray-600 mb-4">
-                          Created by {prompt.created_by} • {new Date(prompt.created_at).toLocaleDateString()}
-                        </p>
+                        <div className="mb-4">
+                          <p className="text-xs text-gray-500 mb-2">
+                            Created by {prompt.created_by} • {new Date(prompt.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
 
                         <div className="mb-4">
-                          <h4 className="font-medium mb-2">Template</h4>
-                          <div className="bg-gray-50 p-4 rounded-lg font-mono text-sm whitespace-pre-wrap">
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Template</h4>
+                          <div className="bg-gray-50 p-3 rounded border text-sm font-mono text-gray-800">
                             {prompt.template}
                           </div>
                         </div>
 
                         {Object.keys(prompt.variables).length > 0 && (
                           <div>
-                            <h4 className="font-medium mb-2">Variables</h4>
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Variables</h4>
                             <div className="flex flex-wrap gap-2">
-                              {Object.keys(prompt.variables).map((key) => (
-                                <Badge key={key} variant="secondary" className="bg-blue-100 text-blue-800">
-                                  {key}
-                                </Badge>
+                              {Object.keys(prompt.variables).map((variable) => (
+                                <span key={variable} className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded">
+                                  {variable}
+                                </span>
                               ))}
                             </div>
                           </div>
                         )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                  {prompts.length === 0 && (
-                    <Card>
-                      <CardContent className="text-center py-12">
-                        <p className="text-gray-500">No prompts created yet</p>
-                        <Button onClick={() => setIsCreatingPrompt(true)} className="mt-4" variant="outline">
-                          Create Your First Prompt
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
-      </main>
+      </div>
     </div>
   )
 }

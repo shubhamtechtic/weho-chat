@@ -140,7 +140,7 @@ export interface Prompt {
 
 class ApiClient {
   private getAuthHeaders() {
-    const token = localStorage.getItem("admin_token")
+    const token = localStorage.getItem("admin_access_token")
     return token ? { Authorization: `Bearer ${token}` } : {}
   }
 

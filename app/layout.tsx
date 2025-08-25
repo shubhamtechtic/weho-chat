@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Poppins } from "next/font/google"
 import { Toaster } from "sonner"
+import { UserAuthProvider } from "@/contexts/user-auth-context"
 import "./globals.css"
 
 const poppins = Poppins({
@@ -25,8 +26,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} antialiased`}>
       <body>
-        <Toaster position="top-center" richColors />
-        {children}
+        <UserAuthProvider>
+          <Toaster position="top-center" richColors />
+          {children}
+        </UserAuthProvider>
       </body>
     </html>
   )
